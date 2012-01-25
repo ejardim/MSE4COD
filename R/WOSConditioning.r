@@ -7,91 +7,112 @@ library(FLAssess)
 #source("C:/FLR/packages/FLBRP/R/FLBRP-class.R")
 #source("C:/FLR/packages/FLBRP/R/FLBRP-methods.R")
 
-my.dir<-"C:/FLR/mse4ej/"
+my.dir<-"../"
 source(paste(my.dir,"R/mseFuncs.R",sep=""))
 
 #### read in WG data
-cod4.2010            <-read.FLStock(paste(my.dir,"input/cod6a.IDX",    sep=""))
-cod4.2010@catch.n    <-read.VPAFile(paste(my.dir,"input/Cod6aCN.DAT",sep=""))
-cod4.2010@catch.wt   <-read.VPAFile(paste(my.dir,"input/Cod6aCW.DAT",sep=""))
-cod4.2010@discards.n <-read.VPAFile(paste(my.dir,"input/Cod6aDN.DAT",sep=""))
-cod4.2010@discards.wt<-read.VPAFile(paste(my.dir,"input/Cod6aDW.DAT",sep=""))
-cod4.2010@landings.n <-read.VPAFile(paste(my.dir,"input/Cod6aLN.DAT",sep=""))
-cod4.2010@landings.wt<-read.VPAFile(paste(my.dir,"input/Cod6aLW.DAT",sep=""))
+cod4.2010 <- readFLStock(paste(my.dir,"input/cod6a.IDX",sep=""))
+catch.n(cod4.2010) <- readVPAFile(paste(my.dir,"input/cod6aCN.DAT",sep=""), quiet=FALSE)
+catch.wt(cod4.2010) <- readVPAFile(paste(my.dir,"input/cod6aCW.DAT",sep=""), quiet=FALSE)
+discards.n(cod4.2010) <- readVPAFile(paste(my.dir,"input/cod6aDN.DAT",sep=""), quiet=FALSE)
+discards.wt(cod4.2010) <- readVPAFile(paste(my.dir,"input/cod6aDW.DAT",sep=""), quiet=FALSE)
 
 range(cod4.2010,c("minfbar","maxfbar"))<-c(2,5)
 cod4.2010 <-setPlusGroup(cod4.2010 ,7, na.rm=TRUE)
 
 #### Get bootstrap estimates
-f.hat            <-read.table(paste(my.dir,"Badapt used for MSE/F.csv",sep=""),header=FALSE,sep=",") [,-c(1,35)]    ### changed MPH
-n.hat            <-read.table(paste(my.dir,"Badapt used for MSE/Numbers.csv",sep=""),header=FALSE,sep=",") [,-c(1,35,36)]    ### changed MPH
-dmns             <-expand.grid(age=1:7,iter=0:1000,year=1978:2010)                                                           ### changed MPH
-cod4.2010@harvest<-as.FLQuant(cbind(data=as.numeric(as.matrix(f.hat)),dmns),units="f")
-cod4.2010@stock.n<-as.FLQuant(cbind(data=as.numeric(as.matrix(n.hat)),dmns))                     ### changed MPH
+f.hat <-read.table(paste(my.dir,"Badapt used for MSE/F.CSV",sep=""),header=FALSE,sep=",") [,-c(1,35)]    ### changed MPH
+n.hat <-read.table(paste(my.dir,"Badapt used for MSE/NUMBERS.CSV",sep=""),header=FALSE,sep=",") [,-c(1,35,36)] ### changed MPH
+
+#--------------------------------------------------------------------
+# using first iter for original named '0'
+# dangerous, at least name iter as '1'
+# better to use 2 objects, one original, one bootstrap
+#--------------------------------------------------------------------
+
+dmns <- expand.grid(age=1:7,iter=0:1000,year=1978:2010) ### changed MPH
+harvest(cod4.2010) <- as.FLQuant(cbind(data=as.numeric(as.matrix(f.hat)),dmns),units="f")
+stock.n(cod4.2010) <- as.FLQuant(cbind(data=as.numeric(as.matrix(n.hat)),dmns))                     ### changed MPH
 rm(f.hat,n.hat)
 
 #### Compare bootstrap and initial runs
-plot(FLStocks(window(iter(cod4.2010,2:1001), end=2010),
-              window(iter(cod4.2010,1),      end=2010)),ylab="Year")
-savePlot(file=paste(my.dir,"/data/KeyRun.jpeg",sep=""))
+# ToBe fixed !
+jpeg(paste(my.dir,"/data/KeyRun.jpeg",sep=""))
+plot(FLStocks(window(iter(cod4.2010,2:1001), end=2010), window(iter(cod4.2010,1), end=2010)), ylab="Year")
+dev.off()
 
 #### fit SR
-cod4.sr       <-as.FLSR(window(iter(cod4.2010,1), end=2010))
-model(cod4.sr)<-ricker()
-cod4.sr       <-transform(cod4.sr,ssb=ssb/1000,rec=rec/1000)
-cod4.sr       <-mle(cod4.sr)
+cod4.sr <- as.FLSR(window(iter(cod4.2010,1), end=2010), model='ricker')
+cod4.sr <- fmle(cod4.sr)
+
+jpeg(file=paste(my.dir,"/data/SR.jpeg",sep=""))
 plot(cod4.sr)
-savePlot(file=paste(my.dir,"/data/SR.jpeg",sep=""))
+dev.off()
 
 #### remove 1st run
-cod4.2010<-iter(cod4.2010,2:1001)
+cod4.2010 <- iter(cod4.2010,2:1001)
 
 #### projections
 ## SRR
-srPar       <-params(cod4.sr)[,-3]
-srPar[,"b"] <-srPar[,"b"]/1000
-sr.deviates <-FLQuant(exp(rnorm(20000)*.66),dimnames=list(age=1,year=2011:2030,iter=1:1000))*exp((-0.66^2)/2)
-save(srPar,file=paste(my.dir,"/data/condSR.RData",sep=""))
+#srPar <- params(cod4.sr)
+#srPar[,"b"] <-srPar[,"b"]/1000
+#sr.deviates <- FLQuant(exp(rnorm(20000, sd=0.66), dimnames=list(age=1,year=2011:2030,iter=1:1000))*exp((-0.66^2)/2)
+sr.deviates <- FLQuant(rlnorm(20000, sd=0.66), dimnames=list(age=1,year=2011:2030,iter=1:1000))
+#save(srPar,file=paste(my.dir,"/data/condSR.RData",sep=""))
 
 ## average Recruitment
-cod4 <-stf(cod4.2010,nyrs=20)
-trgt <-fwdTarget(year=2011:2030,quantity="f",value=0.4)
-cod4 <-fwd(cod4,trgt,sr.params=srPar,sr.model="ricker",sr.residuals=sr.deviates)
+cod4 <- stf(cod4.2010,nyears=20)
+trgt <- fwdControl(data.frame(year=2011:2030, quantity="f", val=0.4))
+cod4 <- fwd(cod4, trgt, sr=cod4.sr, sr.residuals=sr.deviates)
 
 ## halved Recruitment
-srParHalf      <-srPar
-srParHalf[,"a"]<-srPar[,"a"]/2
-cod4.2         <-fwd(cod4,trgt,sr.params=srParHalf,sr.model="ricker",sr.residuals=sr.deviates)
+cod4.2.sr <- cod4.sr 
+params(cod4.2.sr)["a"] <- params(cod4.2.sr)["a"]/2
+cod4.2 <- fwd(cod4, trgt, sr=cod4.2.sr, sr.residuals=sr.deviates)
 
+jpeg(file=paste(my.dir,"/data/ProjSRs.jpeg",sep=""))
 plot(FLStocks(cod4,cod4.2))
-savePlot(file=paste(my.dir,"/data/ProjSRs.jpeg",sep=""))
+dev.off()
+
 #############################################################################################
 
-#### MisReporting ratios
-catchMisrep<-computeCatch.n(window(cod4.2010,end=2010))
+#### MisReporting ratios 
+
+#--------------------------------------------------------------------
+# computeCatch.n is estimating catch.n based on F and N estimates.
+# the ratios are done between this and observed catch.n loaded initially.
+#--------------------------------------------------------------------
+
+catchMisrep <- computeCatch.n(window(cod4.2010,end=2010))
+
+jpeg(file=paste(my.dir,"/data/MisRepRatio.jpeg",sep="")) ### changed MPH - NOT 100% sure about this. Neither do we !!!
 histogram( ~ data | as.character(year), data = as.data.frame(window(catchMisrep/catch.n(cod4.2010),start=1994)), xlab="Mis-reporting Ratio")
-savePlot(file=paste(my.dir,"/data/MisRepRatio.jpeg",sep=""))                                 ### changed MPH - NOT 100% sure about this.
-                                                                                             ### Note that early years ratios are close to 1 so appears as all being 1.
+dev.off()
+### Note that early years ratios are close to 1 so appears as all being 1.
+
 #### OM scenarios
 ## Mis-specification of catch
-cod4.Catch            <-window(cod4.2010,end=2010)
-cod4.Catch@catch.n    <-computeCatch.n(cod4.Catch)
-landings.n(cod4.Catch)<-catch.n(cod4.Catch)*landings.n(cod4.Catch)/(discards.n(cod4.Catch)+landings.n(cod4.Catch))
-discards.n(cod4.Catch)<-catch.n(cod4.Catch)-landings.n(cod4.Catch)
-stock(     cod4.Catch)<-computeStock(   cod4.Catch)
-catch(     cod4.Catch)<-computeCatch(   cod4.Catch,"all")
-landings(  cod4.Catch)<-computeLandings(cod4.Catch,"all")
-discards(  cod4.Catch)<-computeDiscards(cod4.Catch,"all")
+cod4.Catch <- window(cod4.2010,end=2010)
+catch.n(cod4.Catch) <- computeCatch.n(cod4.Catch)
+landings.n(cod4.Catch) <- catch.n(cod4.Catch)*landings.n(cod4.Catch)/(discards.n(cod4.Catch)+landings.n(cod4.Catch))
+discards.n(cod4.Catch) <- catch.n(cod4.Catch)-landings.n(cod4.Catch)
+stock(cod4.Catch) <- computeStock(cod4.Catch)
+catch(cod4.Catch) <- computeCatch(cod4.Catch, "all")
+landings(cod4.Catch) <- computeLandings(cod4.Catch)
+discards(cod4.Catch) <- computeDiscards(cod4.Catch)
 
 ## Mis-specification of M
-cod4.M            <-window(cod4.2010,end=2010)
-m(         cod4.M)<-sweep(harvest(cod4.M)*sweep(catchMisrep,c(1:2),catch.n(cod4.M),"-")/catchMisrep,1:2,m(cod4.M),"+")
-harvest(   cod4.M)<-sweep(harvest(cod4.M)-m(cod4.M),1:2,m(cod4.Catch),"+")
-units(harvest(cod4.M))<-"f"
-stock(     cod4.M)<-computeStock(   cod4.M)
-catch(     cod4.M)<-computeCatch(   cod4.M,"all")
-landings(  cod4.M)<-computeLandings(cod4.M,"all")
-discards(  cod4.M)<-computeDiscards(cod4.M,"all")
+#--------------------------------------------------------------------
+# Hhhmmmm, you may want to take a look at this. M changes from 0.2 to ~0.7:1.2
+#--------------------------------------------------------------------
+cod4.M <- window(cod4.2010,end=2010)
+m(cod4.M) <- sweep(harvest(cod4.M)*sweep(catchMisrep,c(1:2), catch.n(cod4.M), "-")/catchMisrep , 1:2, m(cod4.M), "+")
+harvest(cod4.M) <- sweep(harvest(cod4.M)-m(cod4.M),1:2,m(cod4.Catch),"+")
+units(harvest(cod4.M)) <- "f"
+stock(cod4.M) <- computeStock(cod4.M)
+catch(cod4.M) <- computeCatch(cod4.M,"all")
+landings(cod4.M) <- computeLandings(cod4.M)
+discards(cod4.M) <- computeDiscards(cod4.M)
 
 #### projection for mean recruitment
 ## average Recruitment
