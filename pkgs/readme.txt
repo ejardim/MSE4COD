@@ -1,0 +1,1 @@
+Need to use the correct FLASH package, depending on whether you are conditioning the operating model ("conditioning") or performing a MSE ("MSE").
